@@ -22,6 +22,8 @@ Suggestion kept: motion and sound form a direct loop, with the frying sound quie
 
 ## Actual user trial — pending
 
+Prototype verification: JavaScript syntax and simulated-browser checks passed for cooking both sides, flip cooldown, no heating while paused/off, pan bounds, serving/reset, calibrated tilt, flick detection, mute and permission fallbacks. Browser visual verification was not completed: local file preview was blocked by browser policy, and GitHub Pages was not yet enabled at the attempted public URL. Physical phone sensors and speaker sound remain unverified.
+
 No completed participant trial is claimed. Test on an actual phone before drawing conclusions about sensor feel or sound quality.
 
 - Date / device / browser: to record.

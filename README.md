@@ -46,6 +46,8 @@ To publish on GitHub Pages, select this repository's **Settings → Pages → De
 
 ## Files and credits
 
+Optional developer checks: with Node.js installed, run `node tests.cjs`. No packages are needed. Checks use a simulated browser for cooking, physics bounds, cooldown, reset, pause, motion permission fallbacks and master mute. They do not replace browser visual checks or physical phone/audio testing.
+
 - `index.html`: interface and accessible controls.
 - `style.css`: responsive warm kitchen layout.
 - `app.js`: simulation, Canvas art, audio and optional sensor input.
