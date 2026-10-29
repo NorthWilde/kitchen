@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f2e9">
+  <meta name="description" content="A tiny, tactile kitchen. Tilt, toss and listen to potatoes sizzle. No timer, no rush.">
+  <title>Sizzle Lab · A little kitchen break</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="header"><a class="brand" href="./"><span class="brand-icon" aria-hidden="true">♨</span> sizzle lab<span class="brand-dot">.</span></a><span class="edition">A LITTLE KITCHEN BREAK</span><button id="sound" class="quiet" aria-pressed="false">Sound on</button></header>
+  <main class="layout">
+    <section class="intro">
+      <p class="eyebrow"><span></span> SLOW DOWN. TURN UP THE SIZZLE.</p>
+      <h1>A little toss.<br>A little <em>joy.</em></h1>
+      <p class="lead">Golden potatoes, a warm pan, and that lovely sizzling sound. Nothing to beat. Just something to enjoy.</p>
+      <div class="recipe"><span class="recipe-icon" aria-hidden="true">✧</span><div><span class="small-label">ON THE MENU</span><strong>Golden little potatoes</strong><p>A dash of heat. A gentle flip. Your pace.</p></div></div>
+      <ol class="steps"><li><b>Warm things up</b><span>Add the potatoes, then adjust the heat.</span></li><li><b>Find your rhythm</b><span>Drag the pan to slide them. Tap Flip to turn them.</span></li><li><b>Make it hands-on</b><span>On a phone, enable motion. Tilt gently, or give a small upward flick to toss.</span></li></ol>
+      <div class="note">No timer. No burnt dinner.<br><span>Just listen, move, and make something golden.</span></div>
+    </section>
+
+    <section class="kitchen" aria-label="Interactive frying pan">
+      <div class="kitchen-top"><div><span class="small-label">YOUR LITTLE STOVETOP</span><h2>Let's make something cozy.</h2></div><span id="phase" class="pill">PAN READY</span></div>
+      <div class="canvas-wrap"><canvas id="pan" width="720" height="680" aria-label="Pan simulation. Drag to tilt the pan. Use Flip to toss and turn the potatoes."></canvas><div class="pan-hint" id="panHint">DRAG TO TILT · TAP FLIP TO TOSS</div><div id="plateCard" class="plate-card" hidden><span class="small-label">MADE AT YOUR PACE</span><h3>A little plate of happiness.</h3><p id="plateSummary"></p></div></div>
+      <div class="progress-row"><div><span class="small-label">BOTH SIDES, NICELY GOLDEN</span><strong id="progressText">Ready when you are</strong></div><span id="flips">0 flips</span></div>
+      <div class="progress-track" role="progressbar" aria-label="Cooking progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress"><span id="progressFill"></span></div>
+      <div class="heat-control"><label for="heat">Heat <span id="heatName">Medium</span></label><input id="heat" type="range" min="0" max="100" value="55"><div class="range-ends"><span>OFF</span><span>LOW</span><span>HIGH</span></div></div>
+      <div class="actions"><button id="add" class="primary">Add potatoes <span aria-hidden="true">↗</span></button><button id="flip" class="secondary" disabled>↻ Flip</button><button id="plate" class="secondary" disabled>Plate up</button></div>
+      <div class="utility"><button id="pause" disabled>Pause</button><button id="reset">Start fresh</button><span class="separator"></span><label for="volume">Volume</label><input id="volume" type="range" min="0" max="100" value="50" aria-label="Sound volume"><output id="volumeValue" for="volume">50%</output></div>
+      <p id="status" role="status" aria-live="polite">Your pan is ready. Add a handful of potatoes to begin.</p>
+      <div class="motion-panel"><div><span class="small-label">PHONE MOTION · OPTIONAL</span><p id="motionStatus" role="status" aria-live="polite">Drag and buttons work on every device.</p></div><div class="motion-buttons"><button id="motion">Enable motion</button><button id="calibrate" disabled>Calibrate</button></div><p class="motion-tip">Hold comfortably, calibrate, then tilt or flick gently. No big shakes needed. <span id="modeLabel">Touch / mouse mode</span></p></div>
+    </section>
+  </main>
+  <footer><span>Made for a softer moment.</span><span>COOK A LITTLE. BREATHE A LITTLE.</span></footer>
+  <script src="app.js"></script>
+</body>
+</html>
