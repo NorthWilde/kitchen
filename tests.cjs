@@ -17,6 +17,13 @@ run('onMotion({acceleration:{x:0,y:0,z:12}});');assert.ok(run('toss!==null'));co
 run('stopMotion(); reset(); draw();');assert.equal(run('motionActive'),false);assert.equal(run('pieces.length'),0);
 run('audio={currentTime:0}; master={gain:{setTargetAtTime(v){this.value=v}}}; soundOn=false; syncAudio();');assert.equal(run('master.gain.value'),0);
 console.log('PASS: add/reset, two-side cooking, flip cooldown, no cooking with heat off/paused, pan bounds, plating/restart, tilt calibration, flick detection, motion disable, mute, rendering paths.');
+run('audio=null; reset(); addPotatoes(); pieces.forEach(p=>p.sides=[.7,.3]); targetTilt={x:.4,y:.3}; simulation(.04); draw();');
+assert.ok(run('sceneFaces.length')>500);
+assert.ok(run('sceneFaces.every(f=>f.points.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)))'));
+run('flip(); simulation(.2); draw();');assert.ok(run('sceneFaces.every(f=>f.points.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)))'));
+run('toss=null; plateUp(); draw();');assert.ok(run('sceneFaces.length')>300);
+assert.ok(run('project3([0,0,1]).y < project3([0,0,0]).y'));
+console.log('PASS: 3D pan, bevelled potatoes, tilt/toss/plate render geometry and perspective projection.');
 (async()=>{
   run('audio=null; stopMotion();');
   await run('requestMotion();');assert.match(element('motionStatus').textContent,/isn't available/);

@@ -257,64 +257,187 @@ function simulation(dt) {
   if(progress()>=.999&&!readyNotified){readyNotified=true;$("status").textContent="Golden on both sides. Plate up whenever you're ready.";}
 }
 
-// All artwork is generated with Canvas paths, gradients and shapes.
-function ellipse(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,TAU);ctx.fill();}
-function rounded(x,y,w,h,r,color){ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();}
-function mix(a,b,t){return `rgb(${a.map((n,i)=>Math.round(n+(b[i]-n)*t)).join(",")})`;}
-function drawPotato(p,x,y,scale=1,air=0) {
-  const brown=p.sides[p.face],pulse=toss?Math.sin(toss.time/toss.duration*Math.PI):0;
-  ctx.save();ctx.translate(x,y);ctx.rotate(p.angle+(toss?pulse*p.spin*.6:0));
-  ctx.scale(scale,scale*(toss?Math.max(.18,Math.abs(Math.cos(toss.time/toss.duration*Math.PI))):1));
-  rounded(-p.size/2,-p.size*.4,p.size,p.size*.8,8,"#aa7133");
-  rounded(-p.size/2,-p.size*.4-4,p.size,p.size*.8,8,mix([247,219,137],[190,117,39],brown));
-  rounded(-p.size*.33,-p.size*.3-3,p.size*.47,4,2,"#fff3bf77");
-  for(let i=0;i<4;i++){const sx=Math.sin(p.seed+i*2)*p.size*.26,sy=Math.cos(p.seed+i*3)*p.size*.22;ellipse(sx,sy-2,2+brown*2,1+brown,"#aa6d2840");}
-  ctx.restore();
+// Lightweight software 3D renderer: vertices, perspective, lit faces and depth
+// sorting. It uses the existing Canvas context; no network libraries or GPU needed.
+const cameraElevation=.86, cameraDistance=14, cameraFocal=1280;
+let sceneFaces=[], sceneTiltX=0, sceneTiltY=0, renderLayer=0;
+function rotate3(point,ax,ay,az=0) {
+  let [x,y,z]=point;
+  [x,y]=[x*Math.cos(az)-y*Math.sin(az),x*Math.sin(az)+y*Math.cos(az)];
+  [y,z]=[y*Math.cos(ax)-z*Math.sin(ax),y*Math.sin(ax)+z*Math.cos(ax)];
+  [x,z]=[x*Math.cos(ay)+z*Math.sin(ay),-x*Math.sin(ay)+z*Math.cos(ay)];
+  return [x,y,z];
+}
+function world3(point) {return rotate3(point,sceneTiltX,sceneTiltY);}
+function project3(point) {
+  const [x,y,z]=point;
+  const depth=y*Math.cos(cameraElevation)+z*Math.sin(cameraElevation);
+  const scale=cameraFocal/(cameraDistance-depth);
+  return {x:360+x*scale,y:290+(y*Math.sin(cameraElevation)-z*Math.cos(cameraElevation))*scale,depth};
+}
+function polygon3(vertices,color,options={}) {
+  const world=vertices.map(world3), projected=world.map(project3);
+  const a=world[0],b=world[1],c=world[2];
+  const u=b.map((v,i)=>v-a[i]),v=c.map((n,i)=>n-a[i]);
+  let normal=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+  if(options.inward)normal=normal.map(n=>-n);
+  const length=Math.hypot(...normal)||1;
+  const light=(-normal[0]*.42-normal[1]*.32+normal[2]*.85)/length;
+  const illumination=options.unlit?1:.52+Math.max(0,light)*.5;
+  const lit=color.map(n=>Math.round(clamp(n*illumination,0,255)));
+  sceneFaces.push({points:projected,depth:projected.reduce((sum,p)=>sum+p.depth,0)/projected.length,color:`rgb(${lit.join(",")})`,alpha:options.alpha??1,layer:options.layer??renderLayer});
+}
+function ring3(r0,z0,r1,z1,color,options={}) {
+  const segments=64;
+  for(let i=0;i<segments;i++) {
+    const a=i/segments*TAU,b=(i+1)/segments*TAU;
+    polygon3([[r0*Math.cos(a),r0*Math.sin(a),z0],[r0*Math.cos(b),r0*Math.sin(b),z0],[r1*Math.cos(b),r1*Math.sin(b),z1],[r1*Math.cos(a),r1*Math.sin(a),z1]],color,options);
+  }
+}
+function disk3(radius,z,color) {
+  const vertices=Array.from({length:64},(_,i)=>[Math.cos(i/64*TAU)*radius,Math.sin(i/64*TAU)*radius,z]);
+  polygon3(vertices,color);
+}
+function box3(x,y,z,w,d,h,color) {
+  const p=[[x-w/2,y-d/2,z],[x+w/2,y-d/2,z],[x+w/2,y+d/2,z],[x-w/2,y+d/2,z],
+    [x-w/2,y-d/2,z+h],[x+w/2,y-d/2,z+h],[x+w/2,y+d/2,z+h],[x-w/2,y+d/2,z+h]];
+  for(const ids of [[0,3,2,1],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7],[4,5,6,7]])polygon3(ids.map(i=>p[i]),color);
+}
+function potato3(p,plated=false) {
+  const t=toss?toss.time/toss.duration:0;
+  const air=toss?Math.sin(t*Math.PI)*(reducedMotion?.32:1.1):0;
+  const width=p.size/88,depth=width*.84,height=width*.63;
+  const x=p.x*(plated?1.8:2.12), y=p.y*(plated?1.8:2.12);
+  const bottom=plated?.23:.04;
+  const heading=p.angle*.6;
+  // A bevelled block with separate top, bottom and side surfaces. It rotates
+  // around its own centre while airborne rather than flattening into a sprite.
+  function local(px,py,pz) {
+    const turned=rotate3([px,py,pz-height/2],toss?t*Math.PI:0,0,0);
+    const spun=rotate3(turned,0,0,heading);
+    return [x+spun[0],y+spun[1],bottom+height/2+spun[2]+air];
+  }
+  function footprint(inset,z) {
+    const w=width/2-inset,d=depth/2-inset,c=.055;
+    return [[-w+c,-d], [w-c,-d],[w,-d+c],[w,d-c],[w-c,d],[-w+c,d],[-w,d-c],[-w,-d+c]].map(([a,b])=>local(a,b,z));
+  }
+  const low=footprint(.025,0),middle=footprint(0,.055),upper=footprint(0,height-.055),top=footprint(.035,height);
+  const brown=p.sides[p.face],other=p.sides[1-p.face];
+  const blend=(a,b,n)=>a.map((v,i)=>v+(b[i]-v)*n);
+  const golden=blend([246,216,137],[196,124,46],brown);
+  const side=blend([218,173,86],[173,100,36],brown*.65);
+  polygon3([...low].reverse(),blend([244,212,132],[192,118,41],other));
+  for(let i=0;i<8;i++) {
+    const j=(i+1)%8;
+    polygon3([low[i],low[j],middle[j],middle[i]],side.map(n=>n*.8));
+    polygon3([middle[i],middle[j],upper[j],upper[i]],side);
+    polygon3([upper[i],upper[j],top[j],top[i]],golden.map(n=>Math.min(255,n*1.06)));
+  }
+  polygon3(top,golden);
+  // Toasted patches and salt are attached to the 3D top, so they turn with it.
+  for(let i=0;i<5;i++) {
+    const px=Math.sin(p.seed+i*2.7)*width*.28,py=Math.cos(p.seed+i*3.3)*depth*.25;
+    const r=.018+brown*.026;
+    const patch=Array.from({length:6},(_,j)=>local(px+Math.cos(j/6*TAU)*r,py+Math.sin(j/6*TAU)*r*.7,height+.002));
+    polygon3(patch,blend([222,181,97],[117,66,28],brown));
+  }
+  for(let i=0;i<3;i++) {
+    const px=Math.sin(p.seed+i*4.3)*width*.3,py=Math.cos(p.seed+i*2.3)*depth*.28,r=.009;
+    polygon3([local(px-r,py-r,height+.005),local(px+r,py-r,height+.005),local(px+r,py+r,height+.005),local(px-r,py+r,height+.005)],[255,244,210]);
+  }
+}
+function pan3() {
+  // Exterior thickness, sloping inner wall and rolled metal lip.
+  disk3(2.28,-.23,[38,43,40]);
+  ring3(2.28,-.23,2.6,.38,[62,68,63]);
+  ring3(2.6,.38,2.63,.47,[161,169,154]);
+  ring3(2.63,.47,2.59,.53,[219,222,205]);
+  ring3(2.59,.53,2.49,.49,[160,172,154]);
+  ring3(2.49,.49,2.12,.025,[66,75,65],{inward:true});
+  renderLayer=.1;
+  disk3(2.12,.026,[57,67,57]);
+  // Concentric machining marks, modeled as extremely narrow rings.
+  renderLayer=.11;
+  for(let r=.65;r<2.05;r+=.28)ring3(r,.029,r+.008,.029,[70,81,67]);
+  renderLayer=.2;
+  // The grip has thickness, raised detailing and a metal connector.
+  box3(0,2.61,.32,.39,.61,.15,[138,148,132]);
+  box3(0,3.29,.32,.45,1.13,.24,[57,66,48]);
+  box3(0,3.29,.565,.32,.91,.025,[95,105,72]);
+  box3(-.105,3.29,.594,.025,.72,.008,[139,148,103]);
+  box3(0,3.67,.596,.12,.16,.006,[35,43,32]);
+  // Two metal rivets on the near slope.
+  for(const x of [-.25,.25])box3(x,2.22,.245,.1,.1,.025,[185,191,165]);
+}
+function servingPlate3() {
+  disk3(2.55,.0,[198,197,179]);
+  ring3(2.55,0,2.58,.13,[225,224,209]);
+  ring3(2.58,.13,2.35,.21,[255,253,239]);
+  ring3(2.35,.21,1.98,.12,[237,237,219],{inward:true});
+  disk3(1.98,.12,[252,249,231]);
+}
+function flush3() {
+  sceneFaces.sort((a,b)=>a.layer-b.layer||a.depth-b.depth);
+  for(const face of sceneFaces) {
+    ctx.globalAlpha=face.alpha;ctx.fillStyle=face.color;
+    ctx.beginPath();face.points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fill();
+    // A same-color hairline closes antialiasing seams between mesh panels.
+    ctx.strokeStyle=face.color;ctx.lineWidth=.45;ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+}
+function drawEllipse(x,y,rx,ry,color) {
+  ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,TAU);ctx.fill();
 }
 function draw() {
   ctx.clearRect(0,0,720,680);
-  const plated=state==="plated",cx=360+tilt.x*12,cy=292+tilt.y*10;
-  if(plated){
-    ellipse(360,390,230,154,"#c3b99d26");ellipse(360,365,236,170,"#d4d6c7");ellipse(360,358,236,170,"#fffdf6");
-    ctx.strokeStyle="#e0e0d1";ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(360,358,202,140,0,0,TAU);ctx.stroke();
-    pieces.forEach(p=>drawPotato(p,360+p.x*160,350+p.y*102,1.1));
-    for(let i=0;i<14;i++){const a=i*2.4,r=40+(i%4)*30;ellipse(360+Math.cos(a)*r,350+Math.sin(a)*r*.6,2.5,1.8,"#758858");}
-    return;
-  }
-  // Burner and the small warm glow under a hot pan.
-  ellipse(360,330,252,193,"#d7cfba35");
-  if(heat>0&&state==="cooking") {ctx.globalAlpha=heat*.22;ellipse(cx,cy+25,237,170,"#e4b579");ctx.globalAlpha=1;}
-  // Handle, rivet and softly shaded pan body.
-  ctx.save();ctx.translate(cx,cy);ctx.rotate(-.12+tilt.x*.04);
-  rounded(-23,137,46,185,19,"#353a32");rounded(-17,151,34,164,13,"#64694e");rounded(-10,160,6,134,3,"#ffffff12");ellipse(0,292,7,9,"#343b30");ctx.restore();
-  ellipse(cx,cy+13,246,187,"#30372f");ellipse(cx,cy,246,184,"#858b75");ellipse(cx,cy-4,240,178,"#bec2aa");
-  const interior=ctx.createRadialGradient(cx-65,cy-60,20,cx,cy,240);interior.addColorStop(0,"#50584a");interior.addColorStop(1,"#292f29");
-  ellipse(cx,cy,230,166,interior);
-  ctx.strokeStyle="#ffffff11";ctx.lineWidth=1;
-  for(let r=55;r<230;r+=28){ctx.beginPath();ctx.ellipse(cx,cy,r,r*.71,0,0,TAU);ctx.stroke();}
-  // An oil sheen, deliberately subtle so food remains easy to see.
-  ctx.save();ctx.beginPath();ctx.ellipse(cx,cy,222,157,0,0,TAU);ctx.clip();
-  ctx.strokeStyle="#dfd59b30";ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(cx+tilt.x*35,cy+tilt.y*20,145,95,-.2,0,TAU);ctx.stroke();
+  const plated=state==="plated";
+  sceneTiltX=plated?0:tilt.y*.17;sceneTiltY=plated?0:-tilt.x*.17;sceneFaces=[];renderLayer=0;
+  // Soft countertop shadow sits outside the pan coordinate transform.
+  const shadow=ctx.createRadialGradient(360,345,50,360,345,275);
+  shadow.addColorStop(0,"#635a3c25");shadow.addColorStop(1,"#635a3c00");
+  drawEllipse(360,345,282,196,shadow);
+  if(state==="cooking"&&heat>0)drawEllipse(360,326,224,145,`rgba(225,160,81,${heat*.1})`);
+  if(plated)servingPlate3();else pan3();
+  // Floor, small effects and food are separate layers; a large floor polygon
+  // cannot paint over distant food merely because its average depth is nearer.
+  // Grounded shadows become softer and smaller as food rises.
   const air=toss?Math.sin(toss.time/toss.duration*Math.PI):0;
-  if(pieces.length) {
-    for(const p of pieces) ellipse(cx+p.x*210,cy+p.y*145,p.size*.56,p.size*.25,`rgba(0,0,0,${.14-air*.09})`);
-    const bubbleCount=state==="cooking"&&!toss?Math.floor(heat*55):0;
-    for(let i=0;i<bubbleCount;i++) {
-      const p=pieces[i%pieces.length],a=i*2.39+clock*.3,r=17+((i*11+clock*22)%20);
-      const x=cx+p.x*210+Math.cos(a)*r,y=cy+p.y*145+Math.sin(a)*r*.7;
-      ctx.strokeStyle="#e7dca86b";ctx.lineWidth=1;ctx.beginPath();ctx.arc(x,y,1+((i+clock*7)%3),0,TAU);ctx.stroke();
+  for(const p of pieces) {
+    const r=p.size/190*(1-air*.25),verts=[];
+    for(let i=0;i<16;i++){const a=i/16*TAU;verts.push([p.x*(plated?1.8:2.12)+Math.cos(a)*r,p.y*(plated?1.8:2.12)+Math.sin(a)*r,plated?.125:.035]);}
+    polygon3(verts,[19,24,17],{unlit:true,alpha:.18-air*.09,layer:1});
+    renderLayer=2;potato3(p,plated);
+  }
+  if(!plated&&state==="cooking"&&!toss&&pieces.length) {
+    // Small oil bubbles lie in the plane of the cooking surface.
+    const count=Math.floor(heat*42);
+    for(let i=0;i<count;i++) {
+      const p=pieces[i%pieces.length],a=i*2.39+clock*.3,r=.19+((i*.11+clock*.22)%.18);
+      const x=p.x*2.12+Math.cos(a)*r,y=p.y*2.12+Math.sin(a)*r;
+      if(Math.hypot(x,y)>2.1)continue;
+      const rad=.013+((i+clock*5)%3)*.008;
+      const verts=Array.from({length:8},(_,j)=>[x+Math.cos(j/8*TAU)*rad,y+Math.sin(j/8*TAU)*rad,.04]);
+      polygon3(verts,[197,184,124],{unlit:true,alpha:.5,layer:1.2});
     }
   }
-  ctx.restore();
-  pieces.slice().sort((a,b)=>a.y-b.y).forEach(p=>drawPotato(p,cx+p.x*210,cy+p.y*145-air*(reducedMotion?26:100),1+air*.12,air));
-  ellipse(cx-33,cy+140,5,3,"#c3c8b1");ellipse(cx+33,cy+140,5,3,"#c3c8b1");
-  // Steam is decorative; it stops with the simulation when paused.
+  flush3();
+  // Steam uses projected anchors above the actual pan floor.
   if(state==="cooking"&&heat>.15&&pieces.length&&!reducedMotion) {
-    for(let i=0;i<4;i++){const t=(clock*.22+i*.24)%1;ctx.strokeStyle=`rgba(255,255,246,${(1-t)*heat*.2})`;ctx.lineWidth=3;ctx.beginPath();const x=cx-80+i*51;ctx.moveTo(x,cy-45-t*85);ctx.bezierCurveTo(x-14,cy-70-t*85,x+18,cy-90-t*85,x+5,cy-120-t*85);ctx.stroke();}
+    for(let i=0;i<4;i++) {
+      const t=(clock*.22+i*.24)%1,anchor=project3(world3([-.8+i*.55,0,.1]));
+      ctx.strokeStyle=`rgba(255,255,246,${(1-t)*heat*.25})`;ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.moveTo(anchor.x,anchor.y-t*75);ctx.bezierCurveTo(anchor.x-14,anchor.y-25-t*75,anchor.x+18,anchor.y-45-t*75,anchor.x+5,anchor.y-75-t*75);ctx.stroke();
+    }
   }
-  if(state==="empty") {ctx.fillStyle="#d7ddc5a0";ctx.font="13px Trebuchet MS";ctx.textAlign="center";ctx.fillText("A warm pan. A little possibility.",cx,cy+4);}
-  if(state==="paused") {rounded(230,255,260,65,18,"#fffcf0ed");ctx.fillStyle="#667355";ctx.font="18px Georgia";ctx.textAlign="center";ctx.fillText("Take a little breath.",360,294);}
+  if(state==="empty") {
+    const p=project3(world3([0,-.15,.04]));ctx.fillStyle="#d7ddc5ad";ctx.font="13px Trebuchet MS";ctx.textAlign="center";ctx.fillText("A warm pan. A little possibility.",p.x,p.y);
+  }
+  if(state==="paused") {
+    ctx.fillStyle="#fffcf0ed";ctx.beginPath();ctx.roundRect(230,255,260,65,18);ctx.fill();ctx.fillStyle="#667355";ctx.font="18px Georgia";ctx.textAlign="center";ctx.fillText("Take a little breath.",360,294);
+  }
 }
+
 function frame(time) {
   if(lastTime===null)lastTime=time;
   const dt=clamp((time-lastTime)/1000,0,.04);lastTime=time;
